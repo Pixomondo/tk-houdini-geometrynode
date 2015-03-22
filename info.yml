@@ -1,0 +1,71 @@
+# Copyright (c) 2015 Pixomondo
+#
+# CONFIDENTIAL AND PROPRIETARY
+#
+# This work is provided "AS IS" and subject to the MIT License included in this
+# distribution package. See LICENSE.
+# By accessing, using, copying or modifying this work you indicate your
+# agreement to the MIT License. All rights
+# not expressly granted therein are reserved by Pixomondo.
+#
+# === Original License ===
+#
+# Copyright (c) 2013 Shotgun Software Inc.
+# 
+# CONFIDENTIAL AND PROPRIETARY
+# 
+# This work is provided "AS IS" and subject to the Shotgun Pipeline Toolkit 
+# Source Code License included in this distribution package. See LICENSE.
+# By accessing, using, copying or modifying this work you indicate your 
+# agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
+# not expressly granted therein are reserved by Shotgun Software Inc.
+# ----------------------------------------------------
+#
+# Metadata defining the behaviour and requirements for this app
+
+# expected fields in the configuration file for this app
+configuration:
+    name:
+        type: str
+        description: >
+            A human readable name to display in the HDA to allow selection of this
+            set of configuration options in Houdini.
+
+    default_node_name:
+        type: str
+        description: >
+            A default name the node will be named after when it is created in Houdini.
+            Allowed characters: letters, numbers, periods, dashes, or underscores.
+        default_value: sgtk_geometry
+
+    work_file_template:
+        type: template
+        description: >
+            A reference to a template which locates a Houdini work file on disk.
+            This is used to drive the version and optionally the name of output files.
+        required_fields: [version]
+        optional_fields: [name]
+
+    work_cache_template:
+        type: template
+        required_fields: [version]
+        optional_fields: [name,node]
+
+
+# the Shotgun fields that this app needs in order to operate correctly
+requires_shotgun_fields:
+
+# More verbose description of this item 
+display_name: "Geometry Output Node"
+description: "Support for the Toolkit Geometry output node in Houdini."
+
+# Required minimum versions for this item to run
+requires_shotgun_version:
+requires_core_version: "v0.12.5"
+requires_engine_version: "v0.2.0"
+
+# the engines that this app can operate in:
+supported_engines: [tk-houdini]
+
+# the frameworks required to run this app
+frameworks: 
