@@ -8,10 +8,14 @@
 # agreement to the MIT License. All rights
 # not expressly granted therein are reserved by Pixomondo.
 
+import base64
 import os
+import pickle
 import sys
+import zlib
 
 import hou
+
 import sgtk
 
 
@@ -151,55 +155,66 @@ class ToolkitGeometryNodeHandler(object):
         # get sgtk geometry nodes:
         sg_nodes = self.get_nodes()
         for sg_n in sg_nodes:
-            sop_types = hou.sopNodeTypeCategory().nodeTypes()
-            sop_type = sop_types[ToolkitGeometryNodeHandler.SG_NODE_CLASS]
-            rop_types = hou.ropNodeTypeCategory().nodeTypes()
-            rop_type = rop_types[ToolkitGeometryNodeHandler.SG_NODE_CLASS]
-            is_sop = sg_n.type() == sop_type
-            is_rop = sg_n.type() == rop_type
+            try:
+                sop_types = hou.sopNodeTypeCategory().nodeTypes()
+                sop_type = sop_types[ToolkitGeometryNodeHandler.SG_NODE_CLASS]
+                rop_types = hou.ropNodeTypeCategory().nodeTypes()
+                rop_type = rop_types[ToolkitGeometryNodeHandler.SG_NODE_CLASS]
+                is_sop = sg_n.type() == sop_type
+                is_rop = sg_n.type() == rop_type
 
-            # set as selected:
-            node_name = sg_n.name()
-            node_pos = sg_n.position()
+                # set as selected:
+                node_name = sg_n.name()
+                node_pos = sg_n.position()
 
-            # create new regular Geometry node:
+                self._app.log_debug('Converting node: {0}'.format(sg_n.name()))
+                self._app.log_debug('path: {0}'.format(sg_n.path()))
 
-            if is_sop:
-                geometry_operator = 'rop_geometry'
-            elif is_rop:
-                geometry_operator = 'geometry'
-            else:
-                continue
+                # create new regular Geometry node:
 
-            new_n = sg_n.parent().createNode(geometry_operator)
+                if is_sop:
+                    geometry_operator = 'rop_geometry'
+                elif is_rop:
+                    geometry_operator = 'geometry'
+                else:
+                    continue
 
-            # copy across file parms:
-            filename = self.__get_menu_label(sg_n.parm('sopoutput'))
-            new_n.parm('sopoutput').set(filename)
+                new_n = sg_n.parent().createNode(geometry_operator)
 
-            # copy across any knob values from the internal geometry node.
-            # parmTuples
-            exclude = ['sopoutput']
-            self.__copy_parm_values(sg_n, new_n, exclude)
+                # copy across file parms:
+                filename = self.__get_menu_label(sg_n.parm('sopoutput'))
+                new_n.parm('sopoutput').set(filename)
 
-            # Store Toolkit specific information on geometry node
-            # so that we can reverse this process later
+                # copy across any knob values from the internal geometry node.
+                # parmTuples
+                exclude = ['sopoutput']
+                self.__copy_parm_values(sg_n, new_n, exclude)
 
-            # Profile Name
-            new_n.setUserData('tk_profile_name',
-                              self.get_node_profile_name(sg_n))
+                # Store Toolkit specific information on geometry node
+                # so that we can reverse this process later
 
-            # Copy inputs and move outputs
-            self.__copy_inputs_to_node(sg_n, new_n)
-            self.__move_outputs_to_node(sg_n, new_n)
-            self.__copy_color(sg_n, new_n)
+                # Profile Name
+                new_n.setUserData('tk_profile_name',
+                                  self.get_node_profile_name(sg_n))
 
-            # delete original node:
-            sg_n.destroy()
+                # Copy inputs and move outputs
+                self.__copy_inputs_to_node(sg_n, new_n)
+                if is_rop:
+                    self.__move_outputs_to_node(sg_n, new_n)
+                elif is_sop:
+                    self.__move_outputs_from_node_to_user_data(sg_n, new_n)
+                self.__copy_color(sg_n, new_n)
 
-            # rename new node:
-            new_n.setName(node_name)
-            new_n.setPosition(node_pos)
+                # delete original node:
+                sg_n.destroy()
+
+                # rename new node:
+                new_n.setName(node_name)
+                new_n.setPosition(node_pos)
+            except Exception as err:
+                self._app.log_warning(err)
+                msg = 'Problems converting node: {0}'.format(sg_n.path())
+                self._app.log_warning(msg)
 
     def convert_geometry_to_sg_nodes(self):
         """
@@ -223,48 +238,56 @@ class ToolkitGeometryNodeHandler(object):
                                  'geometry').instances()
         nodes = sop_nodes + rop_nodes
         for n in nodes:
-
-            user_dict = n.userDataDict()
-
-            profile = user_dict.get('tk_profile_name')
-
-            if not profile:
-                # can't convert to a Shotgun Geometry Node
-                # as we have missing parameters!
-                continue
-
-            # set as selected:
-            # wn.setSelected(True)
-            node_name = n.name()
-            node_pos = n.position()
-
-            # create new Shotgun Geometry node:
-            node_class = ToolkitGeometryNodeHandler.SG_NODE_CLASS
-            new_sg_n = n.parent().createNode(node_class)
-
-            # set the profile
             try:
-                parm = new_sg_n.parm(ToolkitGeometryNodeHandler.PARM_CONFIG)
-                index = parm.menuLabels().index(profile)
-                parm.set(index)
-            except ValueError:
-                pass
+                user_dict = n.userDataDict()
 
-            # copy across and knob values from the internal geometry node.
-            exclude = ['sopoutput']
-            self.__copy_parm_values(n, new_sg_n, exclude)
+                profile = user_dict.get('tk_profile_name')
 
-            # Copy inputs and move outputs
-            self.__copy_inputs_to_node(n, new_sg_n)
-            self.__move_outputs_to_node(n, new_sg_n)
-            self.__copy_color(n, new_sg_n)
+                if not profile:
+                    # can't convert to a Shotgun Geometry Node
+                    # as we have missing parameters!
+                    continue
 
-            # delete original node:
-            n.destroy()
+                # set as selected:
+                # wn.setSelected(True)
+                node_name = n.name()
+                node_pos = n.position()
 
-            # rename new node:
-            new_sg_n.setName(node_name)
-            new_sg_n.setPosition(node_pos)
+                self._app.log_debug('Converting node: {0}'.format(n.name()))
+                self._app.log_debug('path: {0}'.format(n.path()))
+
+                # create new Shotgun Geometry node:
+                node_class = ToolkitGeometryNodeHandler.SG_NODE_CLASS
+                new_sg_n = n.parent().createNode(node_class)
+
+                # set the profile
+                try:
+                    parm = new_sg_n.parm(ToolkitGeometryNodeHandler.PARM_CONFIG)
+                    index = parm.menuLabels().index(profile)
+                    parm.set(index)
+                except ValueError:
+                    pass
+
+                # copy across and knob values from the internal geometry node.
+                exclude = ['sopoutput']
+                self.__copy_parm_values(n, new_sg_n, exclude)
+
+                # Copy inputs and move outputs
+                self.__copy_inputs_to_node(n, new_sg_n)
+                self.__move_outputs_to_node(n, new_sg_n)
+                self.__move_outputs_from_user_data_to_node(n, new_sg_n)
+                self.__copy_color(n, new_sg_n)
+
+                # delete original node:
+                n.destroy()
+
+                # rename new node:
+                new_sg_n.setName(node_name)
+                new_sg_n.setPosition(node_pos)
+            except Exception as err:
+                self._app.log_warning(err)
+                msg = 'Problems converting node: {0}'.format(n.path())
+                self._app.log_warning(msg)
 
     ############################################################################
     # Public methods called from OTL - although these are public, they should
@@ -474,3 +497,56 @@ class ToolkitGeometryNodeHandler(object):
         for connection in output_connections:
             node = connection.outputNode()
             node.setInput(connection.inputIndex(), target)
+
+    def __move_outputs_from_node_to_user_data(self, node, target):
+        """Saves output connections into user data of target node.
+        Needed when target node doesn't have outputs.
+        """
+        output_connections = node.outputConnections()
+
+        if not output_connections:
+            return
+
+        outputs = []
+        for connection in output_connections:
+            output_dict = {}
+            output_dict['node'] = connection.outputNode().path()
+            output_dict['input'] = connection.inputIndex()
+            outputs.append(output_dict)
+
+        self._set_compressed_json(target, 'tk_output_connections', outputs)
+
+    def __move_outputs_from_user_data_to_node(self, node, target):
+        """ Move all the output connections from this node to the
+            target node.
+        """
+        outputs = self._get_compressed_json(node, 'tk_output_connections')
+
+        if not outputs:
+            return
+
+        for connection in outputs:
+            node = hou.node(connection['node'])
+            node.setInput(connection['input'], target)
+
+    def _set_compressed_json(self, node, key, data):
+        """Save python structures (like list or dictionary) as json string in
+        user data of a node.
+        """
+        self._app.log_debug(node)
+
+        data = pickle.dumps(data)
+        data_string = 'sgtk-01:' + base64.b64encode(zlib.compress(data))
+
+        node.setUserData(key, data_string)
+
+    def _get_compressed_json(self, node, key):
+        """Returns the python structure from a decompressed json string.
+        """
+        self._app.log_debug(node)
+
+        str_data = node.userData(key)
+        if str_data is None:
+            return None
+        str_ = zlib.decompress(base64.b64decode(str_data[7:]))
+        return pickle.loads(str_)
